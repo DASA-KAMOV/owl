@@ -1,0 +1,13 @@
+# To get Owl using it's icon correctly on Linux place owl.desktop into ~/.local/share/applications/
+# With Path=, Exec= and Icon= set. See https://wiki.archlinux.org/title/Desktop_entries for .desktop file specifications.
+
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Owl
+Comment=A tool for viewing, extracting and editing and Psygnosis game data files.
+Path=
+Exec=
+Icon=
+Terminal=false
+Categories=Utilities

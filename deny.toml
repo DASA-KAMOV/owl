@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Run the command "cargo deny check licenses" before build to ensure dependencies are GPL V3 compatible.
+
+[graph]
+targets = []
+exclude = []
+all-features = true
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+ignore = []
+
+# Commented licences are in principle GPL 3.0 compatible, but not encountered. Uncomment them if it becomes necessary.
+[licenses]
+allow = [
+    "Apache-2.0 WITH LLVM-exception",
+    "Apache-2.0",
+    #"Artistic-2.0",
+    "BSD-2-Clause",
+    #"BSD-2-Clause-FreeBSD",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    #"ClArtistic",
+    #"ECL-2.0",
+    #"EFL-2.0",
+    #"EPL-2.0",
+    #"EUDatagrid",
+    #"FTL",
+    #"GPL-2.0-or-later",
+    "GPL-3.0-or-later",
+    "ISC",
+    #"LGPL-2.0-or-later",
+    #"LGPL-3.0-or-later",
+    "MIT",
+    "MPL-2.0",
+    "NCSA",
+    "OFL-1.1",
+    #"SGI-B-2.0",
+    #"Sleepycat",
+    "Ubuntu-font-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    #"UPL-1.0",
+    #"WTFPL",
+    #"X11",
+    "Zlib",
+    #"ZPL-2.0",
+    #"ZPL-2.1",
+]
+confidence-threshold = 1.0
+exceptions = []
+
+[licenses.private]
+ignore = false
+registries = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []

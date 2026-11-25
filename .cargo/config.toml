@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# rustup target add x86_64-pc-windows-gnu
+# rustup target add x86_64-unknown-linux-gnu
+
+# Exclude the `--release` flag if you intend on debugging.
+# cargo build --release --target x86_64-pc-windows-gnu
+# cargo build --release --target x86_64-unknown-linux-gnu
+
+# 64-bit Windows Target
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+ar = "x86_64-w64-mingw32-ar"
+
+# 64-bit Linux GLIBC Target
+[target.x86_64-unknown-linux-gnu]
