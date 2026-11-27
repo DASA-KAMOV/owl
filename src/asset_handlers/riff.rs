@@ -3,7 +3,7 @@
 pub enum MetadataValue {
     Smpl { fields: Vec<(String, String)> },
     List { entries: Vec<(String, String)> },
-    Unknown { raw: Vec<u8> },
+    Unknown { size: usize },
 }
 
 pub struct MetadataChunk {
@@ -33,8 +33,9 @@ pub struct RIFFHandler {
     bits_per_sample: i16,
     riff_subchunk2_id: String,
     riff_subchunk2_size: i32,
-    waveform_points: std::sync::Arc<Vec<egui_plot::PlotPoint>>,
+    waveform_points: Vec<egui_plot::PlotPoint>,
     metadata_chunks: Vec<MetadataChunk>,
+    audio_cache: Option<std::sync::Arc<[u8]>>,
     // Samples
     // LIST Medtadata
 }
@@ -111,7 +112,7 @@ impl RIFFHandler {
             let value = match tag.as_str() {
                 "smpl" => Self::parse_smpl(raw),
                 "LIST" => Self::parse_list(raw),
-                _ => MetadataValue::Unknown { raw: raw.to_vec() },
+                _ => MetadataValue::Unknown { size: raw.len() },
             };
 
             metadata_chunks.push(MetadataChunk {
@@ -151,8 +152,9 @@ impl RIFFHandler {
             bits_per_sample,
             riff_subchunk2_id,
             riff_subchunk2_size,
-            waveform_points: std::sync::Arc::new(waveform_points),
+            waveform_points,
             metadata_chunks,
+            audio_cache: None,
         }
     }
 
@@ -252,13 +254,28 @@ impl RIFFHandler {
             });
     }
 
+    fn riff_audio_data(&mut self) -> std::sync::Arc<[u8]> {
+        if let Some(data) = &self.audio_cache {
+            return std::sync::Arc::clone(data);
+        }
+
+        let data = {
+            let file_ref = self.file.borrow();
+            let slice = &file_ref.buffer[self.offset..self.offset + self.asset_size];
+            std::sync::Arc::<[u8]>::from(slice)
+        };
+        self.audio_cache = Some(std::sync::Arc::clone(&data));
+        data
+    }
+
     fn play_riff(&mut self) {
-        let file_ref = self.file.borrow();
-        let slice = &file_ref.buffer[self.offset..self.offset + self.asset_size];
-        let cursor = std::io::Cursor::new(slice.to_vec());
+        let cursor = std::io::Cursor::new(self.riff_audio_data());
 
         self.stream_handle =
             Some(rodio::DeviceSinkBuilder::open_default_sink().expect("Open Default Audio Stream"));
+        if self.stream_handle.is_some() {
+            self.stream_handle.as_mut().unwrap().log_on_drop(false);
+        }
         let player =
             rodio::Player::connect_new(self.stream_handle.as_ref().expect("Building Sink").mixer());
 
@@ -272,7 +289,11 @@ impl RIFFHandler {
 }
 
 impl super::assets_common::AssetHandler for RIFFHandler {
-    fn update(&mut self, _ctx: &egui::Context) {}
+    fn update(&mut self, _ctx: &egui::Context) {
+        if self.sink.as_ref().is_some_and(|player| player.empty()) {
+            self.audio_cache = None;
+        }
+    }
     fn display_right_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("RIFF Audio Asset");
         ui.label("These assets are RIFF Audio/WAVE files. Some contain LIST, INFO or smpl data appended to the end.");
@@ -382,9 +403,9 @@ impl super::assets_common::AssetHandler for RIFFHandler {
                                             }
                                         }
 
-                                        MetadataValue::Unknown { raw } => {
+                                        MetadataValue::Unknown { size } => {
                                             ui.label("Unknown Metadata");
-                                            ui.label(format!("{} bytes of data", raw.len()));
+                                            ui.label(format!("{} bytes of data", size));
                                             ui.end_row();
                                         }
                                     }

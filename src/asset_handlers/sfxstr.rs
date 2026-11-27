@@ -3,9 +3,8 @@
 const SFXSTR_HEADER_SIZE: usize = 0x14;
 
 pub struct SFXSTRHandler {
-    asset_size: usize,
     bytes_per_channel: i16,
-    export_data: Vec<u8>,
+    export_data: Option<std::sync::Arc<[u8]>>,
     export_dialog: egui_file_dialog::FileDialog,
     file: std::rc::Rc<std::cell::RefCell<crate::PsyFile>>,
     magic: String,
@@ -18,14 +17,15 @@ pub struct SFXSTRHandler {
     stream_handle: Option<rodio::MixerDeviceSink>,
     volume: f32,
     wav_header: Vec<u8>,
-    waveform_points: std::sync::Arc<Vec<egui_plot::PlotPoint>>,
+    wav_cache: Option<std::sync::Arc<[u8]>>,
+    waveform_points: Vec<egui_plot::PlotPoint>,
 }
 
 impl SFXSTRHandler {
     pub fn new(
         file: std::rc::Rc<std::cell::RefCell<crate::PsyFile>>,
         offset: usize,
-        asset_size: usize,
+        _asset_size: usize,
     ) -> Self {
         let file_ref = file.borrow();
         let buf = &file_ref.buffer;
@@ -87,9 +87,8 @@ impl SFXSTRHandler {
         drop(file_ref);
 
         Self {
-            asset_size,
             bytes_per_channel,
-            export_data: Vec::new(),
+            export_data: None,
             export_dialog,
             file,
             magic,
@@ -102,7 +101,8 @@ impl SFXSTRHandler {
             stream_handle: None,
             volume: 0.5,
             wav_header,
-            waveform_points: std::sync::Arc::new(waveform_points),
+            wav_cache: None,
+            waveform_points,
         }
     }
 
@@ -131,23 +131,32 @@ impl SFXSTRHandler {
     }
 
     #[inline]
-    fn wav_from_sfxstr(&self) -> Vec<u8> {
-        let file_ref: std::cell::Ref<'_, crate::PsyFile> = self.file.borrow();
-        let mut wav_data = Vec::with_capacity(self.wav_header.len() + self.asset_size);
-        wav_data.extend(&self.wav_header);
-        wav_data.extend(
-            &file_ref.buffer[self.offset + SFXSTR_HEADER_SIZE
-                ..self.offset + SFXSTR_HEADER_SIZE + self.asset_size],
-        );
+    fn wav_data(&mut self) -> std::sync::Arc<[u8]> {
+        if let Some(data) = &self.wav_cache {
+            return std::sync::Arc::clone(data);
+        }
+
+        let wav_data = {
+            let mut wav_data = Vec::with_capacity(self.wav_header.len() + self.sample_data_size);
+            wav_data.extend_from_slice(&self.wav_header);
+            wav_data.extend_from_slice(
+                &self.file.borrow().buffer[self.offset + SFXSTR_HEADER_SIZE
+                    ..self.offset + SFXSTR_HEADER_SIZE + self.sample_data_size],
+            );
+            std::sync::Arc::<[u8]>::from(wav_data)
+        };
+        self.wav_cache = Some(std::sync::Arc::clone(&wav_data));
         wav_data
     }
 
     fn play_sfxstr(&mut self) {
-        let wav_data = self.wav_from_sfxstr();
-        let cursor = std::io::Cursor::new(wav_data);
+        let cursor = std::io::Cursor::new(self.wav_data());
 
         self.stream_handle =
             Some(rodio::DeviceSinkBuilder::open_default_sink().expect("Open Default Audio Stream"));
+        if self.stream_handle.is_some() {
+            self.stream_handle.as_mut().unwrap().log_on_drop(false);
+        }
         let player =
             rodio::Player::connect_new(self.stream_handle.as_ref().expect("Building Sink").mixer());
 
@@ -160,7 +169,7 @@ impl SFXSTRHandler {
     }
 
     fn export_sfxstr_as_wav(&mut self) {
-        self.export_data = self.wav_from_sfxstr();
+        self.export_data = Some(self.wav_data());
         self.export_dialog.save_file();
     }
 }
@@ -169,21 +178,25 @@ impl super::assets_common::AssetHandler for SFXSTRHandler {
     fn update(&mut self, ctx: &egui::Context) {
         self.export_dialog.update(ctx);
         if let Some(path) = self.export_dialog.take_picked() {
-            if !&self.export_data.is_empty() {
+            if let Some(data) = &self.export_data {
                 match std::fs::File::create(&path) {
                     Ok(mut output) => {
-                        if let Err(error) =
-                            std::io::Write::write_all(&mut output, &self.export_data)
-                        {
+                        if let Err(error) = std::io::Write::write_all(&mut output, data) {
                             eprintln!("Failed to write {:?}: {}", path, error);
                         }
                     }
+
                     Err(error) => {
                         eprintln!("Failed to create {:?}: {}", path, error);
                     }
                 }
+            } else {
+                eprintln!("No SFXSTR WAV data is available to export.");
             }
-            self.export_data.clear();
+            self.export_data = None;
+        }
+        if self.export_data.is_none() && self.sink.as_ref().is_none_or(|player| player.empty()) {
+            self.wav_cache = None;
         }
     }
 
@@ -223,6 +236,7 @@ impl super::assets_common::AssetHandler for SFXSTRHandler {
                 ui.label(format!("{}", self.bytes_per_channel));
                 ui.end_row();
             });
+
         ui.separator();
         ui.add_space(5.0);
         self.show_waveform(ui);
